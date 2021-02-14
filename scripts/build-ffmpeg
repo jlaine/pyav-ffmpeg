@@ -50,17 +50,25 @@ extract() {
 }
 
 cmake_args="-DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_PREFIX=$destdir"
-if [ "`uname`" = "Linux" ]; then
-    outputdir=/output
-    outputfile=$outputdir/ffmpeg-manylinux_$(uname -m).tar.gz
-elif [ "`uname`" = "Darwin" ]; then
-    outputdir=`pwd`/output
-    outputfile=$outputdir/ffmpeg-macosx_$(uname -m).tar.gz
-    cmake_args="$cmake_args -DCMAKE_INSTALL_NAME_DIR=$destdir/lib"
-else
-    echo "Unknown platform"
-    exit 1
-fi
+case "`uname`" in
+    Linux)
+        outputdir=/output
+        outputfile=$outputdir/ffmpeg-manylinux_$(uname -m).tar.gz
+        ;;
+    Darwin)
+        outputdir=`pwd`/output
+        outputfile=$outputdir/ffmpeg-macosx_$(uname -m).tar.gz
+        cmake_args="$cmake_args -DCMAKE_INSTALL_NAME_DIR=$destdir/lib"
+        ;;
+    MINGW64*)
+        outputdir=`pwd`/output
+        outputfile=$outputdir/ffmpeg-win${PYTHON_ARCH}.tar.gz
+        ;;
+   *)
+        echo "Unknown platform"
+        exit 1
+        ;;
+esac
 
 mkdir -p $outputdir
 if [ ! -e $outputfile ]; then
@@ -80,8 +88,8 @@ if [ ! -e $outputfile ]; then
         yum -y install libuuid-devel
     fi
 
-    # install cmake and meson
-    pip install cmake meson
+    # install cmake, meson and ninja
+    pip install cmake meson ninja
 
     # install gperf
     extract gperf http://ftp.gnu.org/pub/gnu/gperf/gperf-3.1.tar.gz
@@ -90,14 +98,6 @@ if [ ! -e $outputfile ]; then
     # install nasm
     extract nasm https://www.nasm.us/pub/nasm/releasebuilds/2.14.02/nasm-2.14.02.tar.bz2
     build nasm
-
-    # install ninja
-    extract ninja https://github.com/ninja-build/ninja/archive/v1.10.0.tar.gz
-    cd ninja
-    ./configure.py --bootstrap
-    mkdir -p $destdir/bin
-    cp ninja $destdir/bin
-    cd $builddir
 
     #### LIBRARIES ###
 
