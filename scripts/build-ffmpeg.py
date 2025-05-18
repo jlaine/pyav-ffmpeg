@@ -203,14 +203,6 @@ codec_group = [
         build_system="cmake",
     ),
     Package(
-        name="opencore-amr",
-        source_url="http://deb.debian.org/debian/pool/main/o/opencore-amr/opencore-amr_0.1.5.orig.tar.gz",
-        sha256="2c006cb9d5f651bfb5e60156dbff6af3c9d35c7bbcc9015308c0aff1e14cd341",
-        # parallel build hangs on Windows
-        build_parallel=plat != "Windows",
-        when=When.community_only,
-    ),
-    Package(
         name="x264",
         source_url="https://code.videolan.org/videolan/x264/-/archive/32c3b801191522961102d4bea292cdb61068d0dd/x264-32c3b801191522961102d4bea292cdb61068d0dd.tar.bz2",
         sha256="d7748f350127cea138ad97479c385c9a35a6f8527bc6ef7a52236777cf30b839",
@@ -244,7 +236,7 @@ codec_group = [
     ),
 ]
 
-nvheaders = Package(
+nvheaders_package = Package(
     name="nv-codec-headers",
     source_url="https://github.com/FFmpeg/nv-codec-headers/archive/refs/tags/n13.0.19.0.tar.gz",
     sha256="86d15d1a7c0ac73a0eafdfc57bebfeba7da8264595bf531cf4d8db1c22940116",
@@ -301,8 +293,6 @@ def download_tars(packages: list[Package]) -> None:
 
 
 def main():
-    global library_group
-
     parser = argparse.ArgumentParser("build-ffmpeg")
     parser.add_argument("destination")
     parser.add_argument("--community", action="store_true")
@@ -318,14 +308,14 @@ def main():
 
     dest_dir = args.destination
     community = args.community
-    enable_cuda = args.enable_cuda and plat in {"Linux", "Windows"}
-    del args
 
-    output_dir = os.path.abspath("output")
+    # Use CUDA if requested and supported.
+    use_cuda = args.enable_cuda and plat in {"Linux", "Windows"}
 
-    # FFmpeg has native TLS backends for macOS and Windows
+    # Use GnuTLS only on Linux, FFmpeg has native TLS backends for macOS and Windows.
     use_gnutls = plat == "Linux"
 
+    output_dir = os.path.abspath("output")
     if plat == "Linux" and os.environ.get("CIBUILDWHEEL") == "1":
         output_dir = "/output"
     output_tarball = os.path.join(output_dir, f"ffmpeg-{get_platform()}.tar.gz")
@@ -372,11 +362,13 @@ def main():
     ffmpeg_package.build_arguments = [
         "--disable-alsa",
         "--disable-doc",
-        "--disable-libtheora",
-        "--disable-libfreetype",
-        "--disable-libfontconfig",
         "--disable-libbluray",
+        "--disable-libfontconfig",
+        "--disable-libfreetype",
+        "--disable-libopencore-amrnb",
+        "--disable-libopencore-amrwb",
         "--disable-libopenjpeg",
+        "--disable-libtheora",
         (
             "--enable-mediafoundation"
             if plat == "Windows"
@@ -387,8 +379,6 @@ def main():
         "--enable-libaom",
         "--enable-libdav1d",
         "--enable-libmp3lame",
-        "--enable-libopencore-amrnb" if community else "--disable-libopencore-amrnb",
-        "--enable-libopencore-amrwb" if community else "--disable-libopencore-amrwb",
         "--enable-libopus",
         "--enable-libspeex",
         "--enable-libsvtav1",
@@ -404,7 +394,7 @@ def main():
         "--enable-version3",
     ]
 
-    if enable_cuda:
+    if use_cuda:
         ffmpeg_package.build_arguments.extend(["--enable-nvenc", "--enable-nvdec"])
 
     if community:
@@ -438,24 +428,20 @@ def main():
         ]
     )
 
+    packages = library_group[:]
+    if use_cuda:
+        packages += [nvheaders_package]
     if use_gnutls:
-        library_group += gnutls_group
-    if enable_cuda:
-        library_group += [nvheaders]
-
-    package_groups = [library_group + codec_group, [ffmpeg_package]]
-    packages = [p for p_list in package_groups for p in p_list]
+        packages += gnutls_group
+    packages += codec_group
+    packages += [ffmpeg_package]
 
     filtered_packages = []
-
     for package in packages:
-        if package.when == When.never:
-            continue
         if package.when == When.community_only and not community:
             continue
         if package.when == When.commercial_only and community:
             continue
-
         filtered_packages.append(package)
 
     download_tars(build_tools + filtered_packages)
